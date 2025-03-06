@@ -1,3 +1,4 @@
+"use client"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -65,7 +66,7 @@ export default function Home() {
               alt="Nerdvana - A digital paradise for geeks"
               width={400}
               height={400}
-              className="rounded-lg neon-border"
+              className="rounded-full neon-border animate-fade "
             />
           </div>
         </div>
@@ -97,7 +98,21 @@ export default function Home() {
           <Link href="/advisor">Get Started</Link>
         </Button>
       </section>
+
+      {/* CSS for Fade Animation */}
+      <style jsx global>{`
+        @keyframes fade {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0;
+          }
+        }
+        .animate-fade {
+          animation: fade 5s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   )
 }
-
