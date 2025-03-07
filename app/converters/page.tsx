@@ -1,9 +1,14 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Upload, FileType, Check } from 'lucide-react'
+import { Upload, FileType, Check } from "lucide-react"
+import * as XLSX from "xlsx"
+import { jsPDF } from "jspdf"
+import "jspdf-autotable"
 
 type UnitType = "length" | "weight" | "temperature"
 type Unit = string
@@ -15,6 +20,8 @@ interface UnitConverter {
   convert: ConversionFunction
 }
 
+type FileCategory = "document" | "image"
+
 export default function Converters() {
   const [unitType, setUnitType] = useState<UnitType>("length")
   const [inputValue, setInputValue] = useState("")
@@ -22,6 +29,7 @@ export default function Converters() {
   const [outputUnit, setOutputUnit] = useState<Unit>("")
   const [result, setResult] = useState("")
 
+  const [fileCategory, setFileCategory] = useState<FileCategory>("document")
   const [fileInputFormat, setFileInputFormat] = useState("")
   const [fileOutputFormat, setFileOutputFormat] = useState("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -111,11 +119,9 @@ export default function Converters() {
     },
   }
 
-  const fileFormats = {
-    document: ["PDF", "DOCX", "TXT", "RTF", "HTML", "MD"],
-    image: ["JPG", "PNG", "GIF", "SVG", "WEBP", "TIFF"],
-    audio: ["MP3", "WAV", "FLAC", "AAC", "OGG"],
-    video: ["MP4", "AVI", "MOV", "MKV", "WEBM"],
+  const fileFormats: Record<FileCategory, string[]> = {
+    document: ["XLSX", "CSV", "PDF", "TXT"],
+    image: ["JPG", "PNG", "GIF", "WEBP"],
   }
 
   const handleUnitConvert = () => {
@@ -141,7 +147,7 @@ export default function Converters() {
     }
   }
 
-  const handleFileConvert = () => {
+  const handleFileConvert = async () => {
     if (!selectedFile || !fileInputFormat || !fileOutputFormat) {
       alert("Please select a file and both input and output formats.")
       return
@@ -149,10 +155,111 @@ export default function Converters() {
 
     setConversionStatus("converting")
 
-    // Simulate file conversion
-    setTimeout(() => {
+    try {
+      let result: Blob | null = null
+
+      if (fileCategory === "document") {
+        result = await convertDocument(selectedFile, fileInputFormat, fileOutputFormat)
+      } else if (fileCategory === "image") {
+        result = await convertImage(selectedFile, fileInputFormat, fileOutputFormat)
+      }
+
+      if (result) {
+        const url = URL.createObjectURL(result)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = `converted.${fileOutputFormat.toLowerCase()}`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } else {
+        throw new Error("Conversion failed")
+      }
+
       setConversionStatus("done")
-    }, 2000)
+    } catch (error) {
+      console.error("Conversion error:", error)
+      alert("An error occurred during conversion. Please try again.")
+      setConversionStatus("idle")
+    }
+  }
+
+  const convertDocument = async (file: File, inputFormat: string, outputFormat: string): Promise<Blob | null> => {
+    const reader = new FileReader()
+
+    return new Promise((resolve, reject) => {
+      reader.onload = async (e) => {
+        const content = e.target?.result
+
+        if (inputFormat === "XLSX" && outputFormat === "CSV") {
+          const workbook = XLSX.read(content, { type: "binary" })
+          const csvContent = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]])
+          resolve(new Blob([csvContent], { type: "text/csv" }))
+        } else if (inputFormat === "CSV" && outputFormat === "XLSX") {
+          const workbook = XLSX.utils.book_new()
+          const csvData = content as string
+          const rows = csvData.split("\n").map((row) => row.split(","))
+          const worksheet = XLSX.utils.aoa_to_sheet(rows)
+          XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1")
+          const xlsxContent = XLSX.write(workbook, { bookType: "xlsx", type: "binary" })
+          resolve(
+            new Blob([s2ab(xlsxContent)], {
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            }),
+          )
+        } else if (outputFormat === "PDF") {
+          const pdf = new jsPDF()
+          pdf.text(content as string, 10, 10)
+          resolve(pdf.output("blob"))
+        } else if (outputFormat === "TXT") {
+          resolve(new Blob([content as string], { type: "text/plain" }))
+        } else {
+          reject(new Error("Unsupported conversion"))
+        }
+      }
+
+      reader.onerror = () => reject(new Error("File reading failed"))
+
+      if (inputFormat === "XLSX") {
+        reader.readAsBinaryString(file)
+      } else {
+        reader.readAsText(file)
+      }
+    })
+  }
+
+  const convertImage = async (file: File, inputFormat: string, outputFormat: string): Promise<Blob | null> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement("canvas")
+        canvas.width = img.width
+        canvas.height = img.height
+        const ctx = canvas.getContext("2d")
+        if (!ctx) {
+          reject(new Error("Failed to get canvas context"))
+          return
+        }
+        ctx.drawImage(img, 0, 0)
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error("Image conversion failed"))
+          }
+        }, `image/${outputFormat.toLowerCase()}`)
+      }
+      img.onerror = () => reject(new Error("Image loading failed"))
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
+  // Helper function to convert string to ArrayBuffer
+  const s2ab = (s: string) => {
+    const buf = new ArrayBuffer(s.length)
+    const view = new Uint8Array(buf)
+    for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xff
+    return buf
   }
 
   return (
@@ -254,15 +361,15 @@ export default function Converters() {
               <label className="block text-sm font-medium mb-2">File Type</label>
               <select
                 className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm"
+                value={fileCategory}
                 onChange={(e) => {
+                  setFileCategory(e.target.value as FileCategory)
                   setFileInputFormat("")
                   setFileOutputFormat("")
                 }}
               >
                 <option value="document">Document</option>
                 <option value="image">Image</option>
-                <option value="audio">Audio</option>
-                <option value="video">Video</option>
               </select>
             </div>
 
@@ -275,7 +382,7 @@ export default function Converters() {
                   className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm"
                 >
                   <option value="">Select format</option>
-                  {fileFormats.document.map((format) => (
+                  {fileFormats[fileCategory].map((format) => (
                     <option key={format} value={format}>
                       {format}
                     </option>
@@ -291,7 +398,7 @@ export default function Converters() {
                   className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm"
                 >
                   <option value="">Select format</option>
-                  {fileFormats.document.map((format) => (
+                  {fileFormats[fileCategory].map((format) => (
                     <option key={format} value={format}>
                       {format}
                     </option>
@@ -364,7 +471,7 @@ export default function Converters() {
             {conversionStatus === "done" && (
               <div className="mt-4 p-4 bg-gray-800 rounded-md">
                 <p className="text-green-400 font-semibold">Conversion completed!</p>
-                <p className="text-sm text-gray-300 mt-2">Your converted file would be available for download here.</p>
+                <p className="text-sm text-gray-300 mt-2">Your converted file has been downloaded.</p>
               </div>
             )}
           </div>
@@ -373,3 +480,4 @@ export default function Converters() {
     </div>
   )
 }
+

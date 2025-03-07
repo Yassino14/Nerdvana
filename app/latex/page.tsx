@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import FileSaver from "file-saver"
 
 type TemplateName = "Academic Paper" | "Technical Report" | "Resume/CV" | "Presentation" | "Book" | "Thesis"
 
@@ -249,6 +250,26 @@ Your conclusion goes here...
     parseLatex(latexInput)
   }, [latexInput])
 
+  const handleSaveDraft = () => {
+    try {
+      localStorage.setItem("latexDraft", latexInput)
+      alert("Draft saved successfully!")
+    } catch (error) {
+      console.error("Error saving draft:", error)
+      alert("Failed to save draft. Please try again.")
+    }
+  }
+
+  const handleExport = () => {
+    try {
+      const blob = new Blob([latexInput], { type: "text/plain;charset=utf-8" })
+      FileSaver.saveAs(blob, "latex_document.tex")
+    } catch (error) {
+      console.error("Error exporting document:", error)
+      alert("Failed to export document. Please try again.")
+    }
+  }
+
   return (
     <div className="max-w-full mx-auto px-4">
       <h1 className="text-3xl font-bold mb-6">LaTeX Document Composer</h1>
@@ -331,10 +352,10 @@ Your conclusion goes here...
         </div>
 
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => alert("Draft saved! (This is a mock function)")}>
+          <Button variant="outline" onClick={handleSaveDraft}>
             Save Draft
           </Button>
-          <Button onClick={() => alert("Document exported! (This is a mock function)")}>Export</Button>
+          <Button onClick={handleExport}>Export</Button>
         </div>
       </div>
     </div>
